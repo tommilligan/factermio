@@ -246,6 +246,23 @@ fn try_rotate_belt(ecs: &mut World) {
     }
 }
 
+fn try_place_coal(ecs: &mut World) {
+    let player_position = ecs
+        .get_mut::<Position>()
+        .expect("Player has no position.")
+        .clone();
+
+    let mut belts = ecs.write_storage::<Belt>();
+    let positions = ecs.read_storage::<Position>();
+    let mut renderables = ecs.write_storage::<Renderable>();
+    for (mut belt, position, renderable) in (&mut belts, &positions, &mut renderables).join() {
+        if position == &player_position {
+            belt.payload = Some(Resource::Coal);
+            renderable.merge_foreground(Resource::Coal.into());
+        }
+    }
+}
+
 fn player_input(gs: &mut State, ctx: &mut Rltk) {
     // Player movement
     match ctx.key {
@@ -260,6 +277,10 @@ fn player_input(gs: &mut State, ctx: &mut Rltk) {
             // Building things
             VirtualKeyCode::B => try_build_belt(&mut gs.ecs),
             VirtualKeyCode::R => try_rotate_belt(&mut gs.ecs),
+
+            // Place resources
+            VirtualKeyCode::C => try_place_coal(&mut gs.ecs),
+
             _ => {}
         },
     }
