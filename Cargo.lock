@@ -443,6 +443,7 @@ dependencies = [
 name = "factermio_core"
 version = "0.1.0"
 dependencies = [
+ "lazy_static",
  "rltk",
  "specs",
  "specs-derive",

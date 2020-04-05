@@ -3,6 +3,7 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use lazy_static::lazy_static;
 use rltk::{Console, GameState, Rltk, VirtualKeyCode, RGB};
 use specs::prelude::*;
 #[macro_use]
@@ -10,6 +11,29 @@ extern crate specs_derive;
 
 const MAP_WIDTH: i32 = 80;
 const MAP_HEIGHT: i32 = 50;
+
+lazy_static! {
+    static ref COAL_FOREGROUND: Foreground = Foreground {
+        glyph: rltk::to_cp437('c'),
+        color: RGB::named(rltk::BLACK),
+    };
+    static ref ROLLER_UP_FOREGROUND: Foreground = Foreground {
+        glyph: rltk::to_cp437('^'),
+        color: RGB::named(rltk::YELLOW),
+    };
+    static ref ROLLER_DOWN_FOREGROUND: Foreground = Foreground {
+        glyph: rltk::to_cp437('v'),
+        color: RGB::named(rltk::YELLOW),
+    };
+    static ref ROLLER_LEFT_FOREGROUND: Foreground = Foreground {
+        glyph: rltk::to_cp437('<'),
+        color: RGB::named(rltk::YELLOW),
+    };
+    static ref ROLLER_RIGHT_FOREGROUND: Foreground = Foreground {
+        glyph: rltk::to_cp437('>'),
+        color: RGB::named(rltk::YELLOW),
+    };
+}
 
 fn clamp<T>(value: T, minimum: T, maximum: T) -> T
 where
@@ -49,11 +73,46 @@ impl Position {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Foreground {
+    pub glyph: u8,
+    pub color: RGB,
+}
+
+impl From<Resource> for Foreground {
+    fn from(resource: Resource) -> Self {
+        match resource {
+            Resource::Coal => *COAL_FOREGROUND,
+        }
+    }
+}
+
+impl From<&Roller> for Foreground {
+    fn from(roller: &Roller) -> Self {
+        match roller.payload {
+            Some(payload) => payload.into(),
+            None => match roller.direction {
+                Direction::Up => *ROLLER_UP_FOREGROUND,
+                Direction::Down => *ROLLER_DOWN_FOREGROUND,
+                Direction::Left => *ROLLER_LEFT_FOREGROUND,
+                Direction::Right => *ROLLER_RIGHT_FOREGROUND,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Component)]
 pub struct Renderable {
     pub glyph: u8,
     pub fg: RGB,
     pub bg: RGB,
+}
+
+impl Renderable {
+    pub fn merge_foreground(&mut self, foreground: Foreground) {
+        self.fg = foreground.color;
+        self.glyph = foreground.glyph;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,14 +125,6 @@ pub enum Building {
 #[non_exhaustive]
 pub enum Resource {
     Coal,
-}
-
-impl Resource {
-    pub fn glyph(self) -> char {
-        match self {
-            Self::Coal => 'c',
-        }
-    }
 }
 
 #[derive(Debug, Component)]
@@ -94,17 +145,6 @@ pub enum Direction {
 pub struct Roller {
     pub direction: Direction,
     pub payload: Option<Resource>,
-}
-
-impl Roller {
-    pub fn glyph(&self) -> char {
-        match self.direction {
-            Direction::Up => '^',
-            Direction::Left => '<',
-            Direction::Right => '>',
-            Direction::Down => 'v',
-        }
-    }
 }
 
 #[derive(Component, Debug)]
@@ -225,20 +265,33 @@ impl<'a> System<'a> for MoveRollerResources {
         for empty_position in empty_positions.iter() {
             let mut positions_to_visit = vec![empty_position];
 
+            // Get the next position to visit
             while let Some(position) = positions_to_visit.pop() {
+                // Get the data for this position, removing it from the map
+                // as we only want to visit each belt once
                 if let Some((roller, renderable)) = rollers.remove(position) {
+                    // If this position isn't empty, nothing to be done
+                    if roller.payload.is_some() {
+                        return;
+                    }
+
+                    // Get upstream positions
                     if let Some(source_positions) =
                         target_position_to_source_positions.get(position)
                     {
-                        positions_to_visit.extend(source_positions);
-
                         for source_position in source_positions.iter() {
                             if let Some((source_roller, source_renderable)) =
                                 rollers.get_mut(source_position)
                             {
+                                // If the roller upstream doesn't have a payload
+                                // try the next one
+                                if source_roller.payload.is_none() {
+                                    continue;
+                                }
+                                positions_to_visit.push(source_position);
                                 std::mem::swap(&mut roller.payload, &mut source_roller.payload);
-                                renderable.glyph = source_renderable.glyph;
-                                source_renderable.glyph = rltk::to_cp437(source_roller.glyph());
+                                renderable.merge_foreground((&*roller).into());
+                                source_renderable.merge_foreground((&**source_roller).into());
                             }
                         }
                     }
