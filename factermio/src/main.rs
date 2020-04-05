@@ -2,7 +2,7 @@ use rltk::{self, RGB};
 use specs::prelude::*;
 
 use factermio_core::{
-    Direction, Map, Player, Position, Renderable, Resource, ResourceBuffer, Roller, State,
+    Belt, Direction, Map, Player, Position, Renderable, Resource, ResourceBuffer, State,
 };
 
 fn main() {
@@ -13,7 +13,7 @@ fn main() {
     gs.ecs.register::<Renderable>();
     gs.ecs.register::<ResourceBuffer>();
     gs.ecs.register::<Player>();
-    gs.ecs.register::<Roller>();
+    gs.ecs.register::<Belt>();
 
     gs.ecs.insert(Map::default());
 
@@ -52,7 +52,7 @@ fn main() {
             fg: RGB::named(rltk::YELLOW),
             bg: RGB::named(rltk::DARK_GREY),
         })
-        .with(Roller {
+        .with(Belt {
             direction: Direction::Down,
             payload: Some(Resource::Coal),
         })
@@ -66,13 +66,13 @@ fn main() {
                 fg: RGB::named(rltk::YELLOW),
                 bg: RGB::named(rltk::DARK_GREY),
             })
-            .with(Roller {
+            .with(Belt {
                 direction: Direction::Down,
                 payload: None,
             })
             .build();
     }
-    for x in 10..14 {
+    for x in 8..14 {
         gs.ecs
             .create_entity()
             .with(Position { x, y: 24 })
@@ -81,7 +81,7 @@ fn main() {
                 fg: RGB::named(rltk::YELLOW),
                 bg: RGB::named(rltk::DARK_GREY),
             })
-            .with(Roller {
+            .with(Belt {
                 direction: Direction::Right,
                 payload: None,
             })
