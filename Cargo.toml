@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "factermio",
+    "factermio_core",
+]

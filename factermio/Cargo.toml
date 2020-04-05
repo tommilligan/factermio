@@ -1,0 +1,12 @@
+[package]
+name = "factermio"
+version = "0.1.0"
+authors = ["Tom Milligan <tom@reinfer.io>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+factermio_core = { path = "../factermio_core" }
+rltk = "0.7.0"
+specs = "0.16.1"
