@@ -141,10 +141,30 @@ pub enum Direction {
     Right,
 }
 
+impl Direction {
+    pub fn rotate(&self) -> Self {
+        match self {
+            Self::Up => Self::Right,
+            Self::Right => Self::Down,
+            Self::Down => Self::Left,
+            Self::Left => Self::Up,
+        }
+    }
+}
+
 #[derive(Component, Debug)]
 pub struct Belt {
     pub direction: Direction,
     pub payload: Option<Resource>,
+}
+
+impl Default for Belt {
+    fn default() -> Self {
+        Self {
+            direction: Direction::Right,
+            payload: None,
+        }
+    }
 }
 
 #[derive(Component, Debug)]
@@ -168,9 +188,61 @@ fn try_move_player(delta_x: i32, delta_y: i32, ecs: &mut World) {
     let mut positions = ecs.write_storage::<Position>();
     let mut players = ecs.write_storage::<Player>();
 
-    for (_player, pos) in (&mut players, &mut positions).join() {
-        pos.x = clamp(pos.x + delta_x, 0, MAP_WIDTH - 1);
-        pos.y = clamp(pos.y + delta_y, 0, 49);
+    for (_player, position) in (&mut players, &mut positions).join() {
+        position.x = clamp(position.x + delta_x, 0, MAP_WIDTH - 1);
+        position.y = clamp(position.y + delta_y, 0, 49);
+
+        let mut player_position = ecs.write_resource::<Position>();
+        player_position.x = position.x;
+        player_position.y = position.y;
+    }
+}
+
+fn try_build_belt(ecs: &mut World) {
+    let build_position = ecs
+        .get_mut::<Position>()
+        .expect("Player has no position.")
+        .clone();
+
+    // Do not build a belt if one already exists
+    {
+        let belts = ecs.read_storage::<Belt>();
+        let positions = ecs.read_storage::<Position>();
+        for (_belt, position) in (&belts, &positions).join() {
+            if position == &build_position {
+                return;
+            }
+        }
+    }
+
+    ecs.create_entity()
+        .with(build_position)
+        .with(Renderable {
+            glyph: rltk::to_cp437('v'),
+            fg: RGB::named(rltk::YELLOW),
+            bg: RGB::named(rltk::DARK_GREY),
+        })
+        .with(Belt {
+            direction: Direction::Down,
+            payload: None,
+        })
+        .build();
+}
+
+fn try_rotate_belt(ecs: &mut World) {
+    let rotate_position = ecs
+        .get_mut::<Position>()
+        .expect("Player has no position.")
+        .clone();
+
+    let mut belts = ecs.write_storage::<Belt>();
+    let positions = ecs.read_storage::<Position>();
+    let mut renderables = ecs.write_storage::<Renderable>();
+    for (mut belt, position, renderable) in (&mut belts, &positions, &mut renderables).join() {
+        if position == &rotate_position {
+            belt.direction = belt.direction.rotate();
+            renderable.merge_foreground((&*belt).into());
+        }
     }
 }
 
@@ -180,10 +252,14 @@ fn player_input(gs: &mut State, ctx: &mut Rltk) {
         // Nothing happened
         None => {}
         Some(key) => match key {
+            // Movement
             VirtualKeyCode::H | VirtualKeyCode::Left => try_move_player(-1, 0, &mut gs.ecs),
             VirtualKeyCode::L | VirtualKeyCode::Right => try_move_player(1, 0, &mut gs.ecs),
             VirtualKeyCode::K | VirtualKeyCode::Up => try_move_player(0, -1, &mut gs.ecs),
             VirtualKeyCode::J | VirtualKeyCode::Down => try_move_player(0, 1, &mut gs.ecs),
+            // Building things
+            VirtualKeyCode::B => try_build_belt(&mut gs.ecs),
+            VirtualKeyCode::R => try_rotate_belt(&mut gs.ecs),
             _ => {}
         },
     }

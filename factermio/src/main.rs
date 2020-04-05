@@ -16,6 +16,7 @@ fn main() {
     gs.ecs.register::<Belt>();
 
     gs.ecs.insert(Map::default());
+    gs.ecs.insert(Position { x: 40, y: 25 });
 
     gs.ecs
         .create_entity()
