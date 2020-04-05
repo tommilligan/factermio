@@ -44,7 +44,7 @@ where
 
 #[derive(Debug)]
 pub struct Map {
-    pub buildings: Vec<Option<Building>>,
+    pub buildings: Vec<Option<BuildingKind>>,
 }
 
 impl Default for Map {
@@ -87,8 +87,8 @@ impl From<Resource> for Foreground {
     }
 }
 
-impl From<&Belt> for Foreground {
-    fn from(belt: &Belt) -> Self {
+impl From<&ResourceMover> for Foreground {
+    fn from(belt: &ResourceMover) -> Self {
         match belt.payload {
             Some(payload) => payload.into(),
             None => match belt.direction {
@@ -115,10 +115,20 @@ impl Renderable {
     }
 }
 
+#[derive(Debug, Component)]
+pub struct Building {}
+
+impl Default for Building {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
-pub enum Building {
+pub enum BuildingKind {
     Belt,
+    Extractor,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -153,12 +163,12 @@ impl Direction {
 }
 
 #[derive(Component, Debug)]
-pub struct Belt {
+pub struct ResourceMover {
     pub direction: Direction,
     pub payload: Option<Resource>,
 }
 
-impl Default for Belt {
+impl Default for ResourceMover {
     fn default() -> Self {
         Self {
             direction: Direction::Right,
@@ -172,14 +182,14 @@ pub struct Player {}
 
 pub struct State {
     pub ecs: World,
-    move_belt_resources: MoveBeltResources,
+    move_belt_resources: MoveResources,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
             ecs: World::new(),
-            move_belt_resources: MoveBeltResources::default(),
+            move_belt_resources: MoveResources::default(),
         }
     }
 }
@@ -190,7 +200,7 @@ fn try_move_player(delta_x: i32, delta_y: i32, ecs: &mut World) {
 
     for (_player, position) in (&mut players, &mut positions).join() {
         position.x = clamp(position.x + delta_x, 0, MAP_WIDTH - 1);
-        position.y = clamp(position.y + delta_y, 0, 49);
+        position.y = clamp(position.y + delta_y, 0, MAP_HEIGHT - 1);
 
         let mut player_position = ecs.write_resource::<Position>();
         player_position.x = position.x;
@@ -198,35 +208,50 @@ fn try_move_player(delta_x: i32, delta_y: i32, ecs: &mut World) {
     }
 }
 
-fn try_build_belt(ecs: &mut World) {
-    let build_position = ecs
+fn try_build(ecs: &mut World, building_kind: BuildingKind) {
+    let player_position = ecs
         .get_mut::<Position>()
         .expect("Player has no position.")
         .clone();
 
-    // Do not build a belt if one already exists
+    // Do not build something if it already exists
     {
-        let belts = ecs.read_storage::<Belt>();
+        let buildings = ecs.read_storage::<Building>();
         let positions = ecs.read_storage::<Position>();
-        for (_belt, position) in (&belts, &positions).join() {
-            if position == &build_position {
+        for (_building, position) in (&buildings, &positions).join() {
+            if position == &player_position {
                 return;
             }
         }
     }
 
-    ecs.create_entity()
-        .with(build_position)
-        .with(Renderable {
-            glyph: rltk::to_cp437('v'),
-            fg: RGB::named(rltk::YELLOW),
-            bg: RGB::named(rltk::DARK_GREY),
-        })
-        .with(Belt {
-            direction: Direction::Down,
-            payload: None,
-        })
-        .build();
+    let builder = ecs
+        .create_entity()
+        .with(Building::default())
+        .with(player_position);
+    match building_kind {
+        BuildingKind::Belt => builder
+            .with(Renderable {
+                glyph: rltk::to_cp437('v'),
+                fg: RGB::named(rltk::YELLOW),
+                bg: RGB::named(rltk::DARK_GREY),
+            })
+            .with(ResourceMover {
+                direction: Direction::Down,
+                payload: None,
+            }),
+        BuildingKind::Extractor => builder
+            .with(Renderable {
+                glyph: rltk::to_cp437('v'),
+                fg: RGB::named(rltk::RED),
+                bg: RGB::named(rltk::GREY30),
+            })
+            .with(ResourceMover {
+                direction: Direction::Down,
+                payload: None,
+            }),
+    }
+    .build();
 }
 
 fn try_rotate_belt(ecs: &mut World) {
@@ -235,7 +260,7 @@ fn try_rotate_belt(ecs: &mut World) {
         .expect("Player has no position.")
         .clone();
 
-    let mut belts = ecs.write_storage::<Belt>();
+    let mut belts = ecs.write_storage::<ResourceMover>();
     let positions = ecs.read_storage::<Position>();
     let mut renderables = ecs.write_storage::<Renderable>();
     for (mut belt, position, renderable) in (&mut belts, &positions, &mut renderables).join() {
@@ -252,7 +277,7 @@ fn try_place_coal(ecs: &mut World) {
         .expect("Player has no position.")
         .clone();
 
-    let mut belts = ecs.write_storage::<Belt>();
+    let mut belts = ecs.write_storage::<ResourceMover>();
     let positions = ecs.read_storage::<Position>();
     let mut renderables = ecs.write_storage::<Renderable>();
     for (mut belt, position, renderable) in (&mut belts, &positions, &mut renderables).join() {
@@ -275,8 +300,11 @@ fn player_input(gs: &mut State, ctx: &mut Rltk) {
             VirtualKeyCode::K | VirtualKeyCode::Up => try_move_player(0, -1, &mut gs.ecs),
             VirtualKeyCode::J | VirtualKeyCode::Down => try_move_player(0, 1, &mut gs.ecs),
             // Building things
-            VirtualKeyCode::B => try_build_belt(&mut gs.ecs),
+            // Belts
+            VirtualKeyCode::B => try_build(&mut gs.ecs, BuildingKind::Belt),
             VirtualKeyCode::R => try_rotate_belt(&mut gs.ecs),
+            // Extractors
+            VirtualKeyCode::E => try_build(&mut gs.ecs, BuildingKind::Extractor),
 
             // Place resources
             VirtualKeyCode::C => try_place_coal(&mut gs.ecs),
@@ -305,11 +333,11 @@ impl GameState for State {
     }
 }
 
-pub struct MoveBeltResources {
+pub struct MoveResources {
     next_update: Instant,
 }
 
-impl Default for MoveBeltResources {
+impl Default for MoveResources {
     fn default() -> Self {
         Self {
             next_update: Instant::now(),
@@ -317,10 +345,10 @@ impl Default for MoveBeltResources {
     }
 }
 
-impl<'a> System<'a> for MoveBeltResources {
+impl<'a> System<'a> for MoveResources {
     type SystemData = (
         ReadStorage<'a, Position>,
-        WriteStorage<'a, Belt>,
+        WriteStorage<'a, ResourceMover>,
         WriteStorage<'a, Renderable>,
     );
 
@@ -335,7 +363,7 @@ impl<'a> System<'a> for MoveBeltResources {
         let mut target_position_to_source_positions: HashMap<Position, Vec<&Position>> =
             HashMap::new();
 
-        let mut belts: HashMap<&Position, (&mut Belt, &mut Renderable)> =
+        let mut belts: HashMap<&Position, (&mut ResourceMover, &mut Renderable)> =
             (&positions, &mut belts, &mut renderables)
                 .join()
                 .map(|(position, belt, renderable)| {

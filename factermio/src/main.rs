@@ -2,18 +2,23 @@ use rltk::{self, RGB};
 use specs::prelude::*;
 
 use factermio_core::{
-    Belt, Direction, Map, Player, Position, Renderable, Resource, ResourceBuffer, State,
+    Building, Direction, Map, Player, Position, Renderable, Resource, ResourceBuffer,
+    ResourceMover, State,
 };
 
 fn main() {
     use rltk::RltkBuilder;
-    let context = RltkBuilder::simple80x50().with_title("Factermio").build();
+    let context = RltkBuilder::simple80x50()
+        .with_title("Factermio")
+        .with_tile_dimensions(32, 32)
+        .build();
     let mut gs = State::default();
     gs.ecs.register::<Position>();
     gs.ecs.register::<Renderable>();
     gs.ecs.register::<ResourceBuffer>();
     gs.ecs.register::<Player>();
-    gs.ecs.register::<Belt>();
+    gs.ecs.register::<ResourceMover>();
+    gs.ecs.register::<Building>();
 
     gs.ecs.insert(Map::default());
     gs.ecs.insert(Position { x: 40, y: 25 });
@@ -35,7 +40,7 @@ fn main() {
             .with(Position { x: i * 7, y: 20 })
             .with(Renderable {
                 glyph: rltk::to_cp437('x'),
-                fg: RGB::named(rltk::RED),
+                fg: RGB::named(rltk::RED1),
                 bg: RGB::named(rltk::BLACK),
             })
             .with(ResourceBuffer {
@@ -53,7 +58,8 @@ fn main() {
             fg: RGB::named(rltk::YELLOW),
             bg: RGB::named(rltk::DARK_GREY),
         })
-        .with(Belt {
+        .with(Building::default())
+        .with(ResourceMover {
             direction: Direction::Down,
             payload: Some(Resource::Coal),
         })
@@ -67,7 +73,8 @@ fn main() {
                 fg: RGB::named(rltk::YELLOW),
                 bg: RGB::named(rltk::DARK_GREY),
             })
-            .with(Belt {
+            .with(Building::default())
+            .with(ResourceMover {
                 direction: Direction::Down,
                 payload: None,
             })
@@ -82,7 +89,8 @@ fn main() {
                 fg: RGB::named(rltk::YELLOW),
                 bg: RGB::named(rltk::DARK_GREY),
             })
-            .with(Belt {
+            .with(Building::default())
+            .with(ResourceMover {
                 direction: Direction::Right,
                 payload: None,
             })
