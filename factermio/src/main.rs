@@ -3,19 +3,20 @@ use specs::prelude::*;
 
 use factermio_core::{
     Building, Direction, Map, Player, Position, Renderable, Resource, ResourceBuffer,
-    ResourceMover, State,
+    ResourceExtractor, ResourceMover, State,
 };
 
 fn main() {
     use rltk::RltkBuilder;
     let context = RltkBuilder::simple80x50()
         .with_title("Factermio")
-        .with_tile_dimensions(32, 32)
+        .with_tile_dimensions(16, 16)
         .build();
     let mut gs = State::default();
     gs.ecs.register::<Position>();
     gs.ecs.register::<Renderable>();
     gs.ecs.register::<ResourceBuffer>();
+    gs.ecs.register::<ResourceExtractor>();
     gs.ecs.register::<Player>();
     gs.ecs.register::<ResourceMover>();
     gs.ecs.register::<Building>();

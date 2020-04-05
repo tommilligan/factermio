@@ -162,6 +162,9 @@ impl Direction {
     }
 }
 
+#[derive(Component, Debug, Default)]
+pub struct ResourceExtractor {}
+
 #[derive(Component, Debug)]
 pub struct ResourceMover {
     pub direction: Direction,
@@ -183,6 +186,7 @@ pub struct Player {}
 pub struct State {
     pub ecs: World,
     move_belt_resources: MoveResources,
+    extract_resources: ExtractResources,
 }
 
 impl Default for State {
@@ -190,6 +194,7 @@ impl Default for State {
         Self {
             ecs: World::new(),
             move_belt_resources: MoveResources::default(),
+            extract_resources: ExtractResources::default(),
         }
     }
 }
@@ -246,6 +251,7 @@ fn try_build(ecs: &mut World, building_kind: BuildingKind) {
                 fg: RGB::named(rltk::RED),
                 bg: RGB::named(rltk::GREY30),
             })
+            .with(ResourceExtractor::default())
             .with(ResourceMover {
                 direction: Direction::Down,
                 payload: None,
@@ -333,11 +339,12 @@ impl GameState for State {
     }
 }
 
-pub struct MoveResources {
+#[derive(Debug)]
+pub struct TickLimiter {
     next_update: Instant,
 }
 
-impl Default for MoveResources {
+impl Default for TickLimiter {
     fn default() -> Self {
         Self {
             next_update: Instant::now(),
@@ -345,24 +352,41 @@ impl Default for MoveResources {
     }
 }
 
+impl TickLimiter {
+    fn should_tick(&mut self) -> bool {
+        let now = Instant::now();
+        if self.next_update > now {
+            return false;
+        }
+        self.next_update = now + Duration::from_millis(500);
+        true
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct MoveResources {
+    limiter: TickLimiter,
+}
+
 impl<'a> System<'a> for MoveResources {
     type SystemData = (
         ReadStorage<'a, Position>,
+        ReadStorage<'a, ResourceExtractor>,
         WriteStorage<'a, ResourceMover>,
         WriteStorage<'a, Renderable>,
     );
 
-    fn run(&mut self, (positions, mut belts, mut renderables): Self::SystemData) {
-        let now = Instant::now();
-        if self.next_update > now {
+    fn run(&mut self, (positions, _extractors, mut belts, mut renderables): Self::SystemData) {
+        if !self.limiter.should_tick() {
             return;
         }
-        self.next_update = now + Duration::from_millis(500);
 
         let mut empty_positions: Vec<Position> = Vec::new();
         let mut target_position_to_source_positions: HashMap<Position, Vec<&Position>> =
             HashMap::new();
 
+        // Build a map of all belts by position.
+        // TODO - maybe this is faster no to compute each iteration?
         let mut belts: HashMap<&Position, (&mut ResourceMover, &mut Renderable)> =
             (&positions, &mut belts, &mut renderables)
                 .join()
@@ -423,17 +447,45 @@ impl<'a> System<'a> for MoveResources {
                 }
             }
         }
+    }
+}
 
-        //eprintln!("{:?}", position);
-        // let adjustment = if lefty.going_left { -3 } else { 1 };
-        // lefty.going_left = !lefty.going_left;
-        // pos.x = (pos.x + adjustment).rem_euclid(80);
+#[derive(Debug, Default)]
+pub struct ExtractResources {
+    limiter: TickLimiter,
+}
+
+impl<'a> System<'a> for ExtractResources {
+    type SystemData = (
+        ReadStorage<'a, Position>,
+        WriteStorage<'a, ResourceBuffer>,
+        ReadStorage<'a, ResourceExtractor>,
+        WriteStorage<'a, ResourceMover>,
+    );
+
+    fn run(&mut self, (positions, mut buffers, extractors, mut belts): Self::SystemData) {
+        if !self.limiter.should_tick() {
+            return;
+        }
+
+        let mut position_buffers: HashMap<&Position, &mut ResourceBuffer> =
+            (&positions, &mut buffers).join().collect();
+
+        for (position, belt, _extractor) in (&positions, &mut belts, &extractors).join() {
+            if let Some(buffer) = position_buffers.get_mut(position) {
+                if buffer.remaining > 0 && belt.payload.is_none() {
+                    buffer.remaining -= 1;
+                    belt.payload = Some(buffer.resource);
+                }
+            }
+        }
     }
 }
 
 impl State {
     fn run_systems(&mut self) {
         self.move_belt_resources.run_now(&self.ecs);
+        self.extract_resources.run_now(&self.ecs);
         self.ecs.maintain();
     }
 }
